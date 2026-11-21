@@ -191,6 +191,9 @@
                     </div>
                     <div class="flex flex-col sm:flex-row gap-2">
                         <input type="url" id="github-base-url-input" oninput="updateBaseUrl(this.value)" placeholder="https://tu-usuario.github.io/mi-qr-dinamico/" class="flex-grow px-3.5 py-2 rounded-xl bg-white/10 border border-white/20 text-xs font-mono text-white placeholder-slate-400 outline-none focus:border-blue-400">
+                        <button type="button" onclick="clearBaseUrl()" class="px-3 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/30 text-xs font-semibold transition shrink-0" title="Borrar URL actual">
+                            🧹 Limpiar
+                        </button>
                         <button type="button" onclick="autoDetectCurrentUrl()" class="px-3.5 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-xs font-semibold transition shrink-0" title="Úsalo solo cuando ya hayas abierto la página desde tu GitHub Pages">
                             📍 Detectar desde GitHub
                         </button>
@@ -481,53 +484,87 @@
                 emoji: '▶️',
                 fieldLabel: 'Enlace del Video o Canal de YouTube',
                 placeholder: 'https://www.youtube.com/watch?v=...',
-                desc: 'Abre clases grabadas, tutoriales o transmisiones en vivo.',
+                desc: 'Ideal para tutoriales, clases grabadas o videos promocionales.',
                 banner: 'https://placehold.co/800x300/b91c1c/ffffff?text=Video+en+YouTube'
             },
             tiktok: {
                 label: 'TikTok',
                 emoji: '🎵',
-                fieldLabel: 'URL del Video o Perfil de TikTok',
+                fieldLabel: 'Enlace de Video o Perfil de TikTok',
                 placeholder: 'https://www.tiktok.com/@usuario/video/...',
-                desc: 'Conecta campañas cortas, reels o perfiles oficiales.',
-                banner: 'https://placehold.co/800x300/18181b/ffffff?text=Video+en+TikTok'
+                desc: 'Conecta tus campañas físicas con contenido viral vertical.',
+                banner: 'https://placehold.co/800x300/18181b/ffffff?text=Contenido+TikTok'
             },
             instagram: {
                 label: 'Instagram',
                 emoji: '📸',
-                fieldLabel: 'URL del Perfil o Publicación de Instagram',
+                fieldLabel: 'Enlace de Perfil, Reel o Post de Instagram',
                 placeholder: 'https://www.instagram.com/tuempresa/',
-                desc: 'Lleva tráfico a tu perfil, reels o tienda en Instagram.',
-                banner: 'https://placehold.co/800x300/be185d/ffffff?text=Perfil+Instagram'
+                desc: 'Aumenta seguidores o dirige hacia promociones en Instagram.',
+                banner: 'https://placehold.co/800x300/9d174d/ffffff?text=Perfil+Instagram'
             },
             asistencia: {
                 label: 'Asistencia',
                 emoji: '🎓',
-                fieldLabel: 'Nombre de la Clase / Sesión Académica',
-                placeholder: 'Ej. Programación Web - Sesión 05',
-                desc: 'Muestra un formulario para que los estudiantes registren su asistencia.',
-                banner: 'https://placehold.co/800x300/065f46/ffffff?text=Registro+de+Asistencia'
+                fieldLabel: 'Nombre de la Sesión / Clase',
+                placeholder: 'Ej. Ingeniería de Software - Clase 04',
+                desc: 'Activa el formulario de registro rápido de asistencia para estudiantes.',
+                banner: 'https://placehold.co/800x300/065f46/ffffff?text=Control+de+Asistencia+Estudiantil'
             }
         };
 
+        function sanitizeGitHubUrl(raw) {
+            let cleaned = (raw || '').trim().split('?')[0].split('#')[0];
+            // Descartar URLs largas del entorno de vista previa
+            if (!cleaned || cleaned.includes('usercontent.goog') || cleaned.startsWith('about:')) {
+                return '';
+            }
+            // Si el usuario pegó la URL del repositorio (https://github.com/usuario/repo), convertirla a GitHub Pages
+            const ghRepoMatch = cleaned.match(/^https?:\/\/(?:www\.)?github\.com\/([^\/]+)\/([^\/]+)\/?.*$/i);
+            if (ghRepoMatch) {
+                cleaned = `https://${ghRepoMatch[1].toLowerCase()}.github.io/${ghRepoMatch[2]}/`;
+            }
+            return cleaned;
+        }
+
         function updateBaseUrl(val) {
-            baseGitHubUrl = (val || '').trim();
+            const cleaned = sanitizeGitHubUrl(val);
+            if (val && val.includes('usercontent.goog')) {
+                const input = document.getElementById('github-base-url-input');
+                if (input) input.value = '';
+                showToast('⚠️ Se bloqueó la URL larga de vista previa. Pega tu enlace corto de github.io', 'info');
+            }
+            baseGitHubUrl = cleaned;
             localStorage.setItem('qr_github_base_url', baseGitHubUrl);
             if (dynamicQRs[activeQRIndex]) {
                 updatePreviewPanel(dynamicQRs[activeQRIndex]);
             }
         }
 
+        function clearBaseUrl() {
+            baseGitHubUrl = '';
+            localStorage.removeItem('qr_github_base_url');
+            const input = document.getElementById('github-base-url-input');
+            if (input) {
+                input.value = '';
+                input.focus();
+            }
+            if (dynamicQRs[activeQRIndex]) {
+                updatePreviewPanel(dynamicQRs[activeQRIndex]);
+            }
+            showToast('🧹 Campo limpiado. Pega ahora tu URL corta de GitHub Pages.', 'info');
+        }
+
         function autoDetectCurrentUrl() {
             if (window.location.hostname.includes('usercontent.goog') || window.location.protocol === 'about:') {
-                showToast('⚠️ Estás en la vista previa. Pega tu enlace de github.io directamente en la caja.', 'info');
+                showToast('⚠️ Estás en la vista previa. Pega tu enlace corto de github.io directamente en la caja.', 'info');
                 return;
             }
-            const detected = window.location.origin + window.location.pathname;
+            const detected = sanitizeGitHubUrl(window.location.origin + window.location.pathname);
             const input = document.getElementById('github-base-url-input');
             if (input) input.value = detected;
             updateBaseUrl(detected);
-            showToast('📍 URL de GitHub Pages detectada y guardada', 'success');
+            showToast('📍 URL limpia de GitHub Pages detectada', 'success');
         }
 
         const CUSTOM_BANNERS = {
@@ -538,7 +575,7 @@
         };
 
         let currentTheme = { primary: '#1e3a8a', secondary: '#3b82f6', name: 'Azul Corporativo' };
-        let baseGitHubUrl = localStorage.getItem('qr_github_base_url') || 'https://tu-usuario.github.io/qr-dinamico/';
+        let baseGitHubUrl = sanitizeGitHubUrl(localStorage.getItem('qr_github_base_url')) || 'https://tu-usuario.github.io/qr-dinamico/';
         let manualFirebaseRaw = localStorage.getItem('qr_manual_firebase_config') || '';
         let hasCloudConnection = false;
         let activeQRIndex = 0;
@@ -580,18 +617,17 @@
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'qr-dinamico-github';
 
         function buildDynamicUrl(id) {
-            let cleanBase = (baseGitHubUrl || '').trim();
+            let cleanBase = sanitizeGitHubUrl(baseGitHubUrl);
             if (!cleanBase) {
-                cleanBase = window.location.origin + window.location.pathname;
+                cleanBase = 'https://tu-usuario.github.io/qr-dinamico/';
             }
             // Asegurar que la URL base termine en / o .html correctamente
             if (!cleanBase.endsWith('/') && !cleanBase.endsWith('.html')) {
                 cleanBase += '/';
             }
-            const separator = cleanBase.includes('?') ? '&' : '?';
 
-            // Mantener el patrón del QR 100% fijo usando solo el ID permanente
-            return `${cleanBase}${separator}qr=${id}`;
+            // Enlace corto y limpio: únicamente tu dominio + ?qr=ID
+            return `${cleanBase}?qr=${id}`;
         }
 
         function saveManualFirebaseConfig() {
