@@ -646,6 +646,39 @@
             }
         }
 
+        async function syncQRToCloud(qr) {
+            if (!qr) return;
+            localStorage.setItem('qr_dynamic_list', JSON.stringify(dynamicQRs));
+            if (!db || !currentUser) return;
+            try {
+                const { doc, setDoc } = window.FirebaseSDK;
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'dynamic_qrs', qr.id.toUpperCase()), {
+                    ...qr,
+                    themePrimary: currentTheme.primary,
+                    updatedAt: Date.now()
+                });
+            } catch (err) {
+                console.warn('Error sincronizando QR con la nube:', err);
+            }
+        }
+
+        function setQREmoji(emoji) {
+            const qr = dynamicQRs[activeQRIndex];
+            if (!qr) return;
+            qr.emoji = emoji;
+            updatePreviewPanel(qr);
+            renderQRList();
+            syncQRToCloud(qr);
+        }
+
+        function updateReferenceImage(val) {
+            const qr = dynamicQRs[activeQRIndex];
+            if (!qr) return;
+            qr.refImage = val;
+            updatePreviewPanel(qr);
+            syncQRToCloud(qr);
+        }
+
         async function initCloudAndApp() {
             const urlInput = document.getElementById('github-base-url-input');
             if (urlInput) urlInput.value = baseGitHubUrl;
