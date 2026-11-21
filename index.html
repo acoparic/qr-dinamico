@@ -195,6 +195,24 @@
                             📍 Usar URL Actual
                         </button>
                     </div>
+                    <!-- Configuración de Firebase para que GitHub Pages lea los cambios desde cualquier celular -->
+                    <details class="mt-3 pt-3 border-t border-white/10 text-xs">
+                        <summary class="cursor-pointer font-semibold text-amber-300 hover:text-amber-200 select-none">
+                            ⚙️ Configurar Nube para GitHub Pages (Necesario para editar destino desde otro dispositivo)
+                        </summary>
+                        <div class="mt-2.5 space-y-2 bg-black/25 p-3 rounded-xl">
+                            <p class="text-[11px] text-slate-300 leading-relaxed">
+                                Para que tu celular vea los cambios que haces en tu PC cuando uses GitHub Pages, pega aquí el objeto <code class="text-amber-300">firebaseConfig</code> de tu proyecto gratuito en Firebase (Firestore en modo prueba):
+                            </p>
+                            <textarea id="firebase-manual-config" rows="3" placeholder='{"apiKey": "AIza...", "authDomain": "...", "projectId": "..."}' class="w-full p-2 rounded-lg bg-slate-950 border border-white/20 font-mono text-[11px] text-emerald-300 outline-none"></textarea>
+                            <div class="flex items-center justify-between gap-2">
+                                <span class="text-[10px] text-slate-400">Si lo dejas vacío, el QR incluirá el enlace de respaldo para que nunca falle al escanear.</span>
+                                <button type="button" onclick="saveManualFirebaseConfig()" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shrink-0">
+                                    💾 Conectar Firebase
+                                </button>
+                            </div>
+                        </div>
+                    </details>
                 </div>
 
                 <!-- Tarjeta 2: Editor de Destino y Tipo de Acceso -->
@@ -501,6 +519,8 @@
 
         let currentTheme = { primary: '#1e3a8a', secondary: '#3b82f6', name: 'Azul Corporativo' };
         let baseGitHubUrl = localStorage.getItem('qr_github_base_url') || 'https://tu-usuario.github.io/qr-dinamico/';
+        let manualFirebaseRaw = localStorage.getItem('qr_manual_firebase_config') || '';
+        let hasCloudConnection = false;
         let activeQRIndex = 0;
 
         let dynamicQRs = JSON.parse(localStorage.getItem('qr_dynamic_list') || 'null') || [
@@ -544,15 +564,49 @@
             if (!cleanBase) {
                 cleanBase = window.location.origin + window.location.pathname;
             }
+            // Asegurar que la URL base termine en / o .html correctamente
+            if (!cleanBase.endsWith('/') && !cleanBase.endsWith('.html')) {
+                cleanBase += '/';
+            }
             const separator = cleanBase.includes('?') ? '&' : '?';
+            const qr = dynamicQRs.find(item => item.id === id) || dynamicQRs[activeQRIndex];
+
+            // Si no hay Firebase conectado aún en GitHub Pages, incrustamos respaldo en el hash (#) para que el celular nunca dé error
+            if (!hasCloudConnection && qr) {
+                const payload = btoa(encodeURIComponent(JSON.stringify({
+                    category: qr.category,
+                    targetUrl: qr.targetUrl,
+                    extraTitle: qr.extraTitle,
+                    emoji: qr.emoji,
+                    courseCode: qr.courseCode,
+                    teacherName: qr.teacherName,
+                    themePrimary: currentTheme.primary
+                })));
+                return `${cleanBase}${separator}qr=${id}#data=${payload}`;
+            }
+
             return `${cleanBase}${separator}qr=${id}`;
         }
 
-        function updateBaseUrl(val) {
-            baseGitHubUrl = val.trim();
-            localStorage.setItem('qr_github_base_url', baseGitHubUrl);
-            if (dynamicQRs[activeQRIndex]) {
-                updatePreviewPanel(dynamicQRs[activeQRIndex]);
+        function saveManualFirebaseConfig() {
+            const raw = document.getElementById('firebase-manual-config').value.trim();
+            if (!raw) {
+                localStorage.removeItem('qr_manual_firebase_config');
+                showToast('Configuración de Firebase borrada', 'info');
+                return;
+            }
+            try {
+                // Permitir pegar tanto JSON puro como "const firebaseConfig = {...};"
+                const jsonMatch = raw.match(/\{[\s\S]*\}/);
+                if (!jsonMatch) throw new Error('Formato inválido');
+                const parsed = JSON.parse(jsonMatch[0]);
+                if (!parsed.apiKey || !parsed.projectId) throw new Error('Faltan campos apiKey o projectId');
+
+                localStorage.setItem('qr_manual_firebase_config', JSON.stringify(parsed));
+                showToast('✅ Firebase guardado. Recargando conexión...', 'success');
+                setTimeout(() => window.location.reload(), 800);
+            } catch (err) {
+                showToast('❌ Pega un JSON válido con apiKey y projectId', 'info');
             }
         }
 
@@ -612,9 +666,18 @@
             const urlInput = document.getElementById('github-base-url-input');
             if (urlInput) urlInput.value = baseGitHubUrl;
 
+            const fbInput = document.getElementById('firebase-manual-config');
+            if (fbInput && manualFirebaseRaw) fbInput.value = manualFirebaseRaw;
+
             try {
-                if (typeof __firebase_config !== 'undefined' && window.FirebaseSDK) {
-                    const firebaseConfig = JSON.parse(__firebase_config);
+                let firebaseConfig = null;
+                if (typeof __firebase_config !== 'undefined') {
+                    firebaseConfig = JSON.parse(__firebase_config);
+                } else if (manualFirebaseRaw) {
+                    firebaseConfig = JSON.parse(manualFirebaseRaw);
+                }
+
+                if (firebaseConfig && window.FirebaseSDK) {
                     const { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, getFirestore, collection, onSnapshot } = window.FirebaseSDK;
                     const app = initializeApp(firebaseConfig);
                     const auth = getAuth(app);
@@ -628,6 +691,13 @@
                         currentUser = cred.user;
                     }
 
+                    hasCloudConnection = true;
+                    const pill = document.getElementById('cloud-status-pill');
+                    if (pill) {
+                        pill.textContent = '● Nube Sincronizada';
+                        pill.className = 'text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0';
+                    }
+
                     onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'asistencias'), (snap) => {
                         const list = [];
                         snap.forEach(d => list.push(d.data()));
@@ -638,7 +708,10 @@
                     });
                 } else {
                     const pill = document.getElementById('cloud-status-pill');
-                    if (pill) pill.textContent = '● Modo Local / GitHub Pages';
+                    if (pill) {
+                        pill.textContent = '● Modo Directo GitHub Pages';
+                        pill.className = 'text-[10px] font-bold px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 shrink-0';
+                    }
                 }
             } catch (e) {
                 console.warn('Iniciando en modo local:', e);
@@ -995,7 +1068,7 @@
 
             let qrData = dynamicQRs.find(item => item.id.toUpperCase() === qrId.toUpperCase());
 
-            // Intentar leer la versión más reciente desde la nube
+            // 1. Intentar leer la versión más reciente desde la nube (Firebase)
             if (db && currentUser) {
                 try {
                     const { doc, getDoc } = window.FirebaseSDK;
@@ -1004,7 +1077,17 @@
                         qrData = snap.data();
                     }
                 } catch (e) {
-                    console.warn('Leyendo respaldo local:', e);
+                    console.warn('Leyendo respaldo local/hash:', e);
+                }
+            }
+
+            // 2. Si no está en la nube, leer el respaldo incrustado en la URL (#data=...)
+            if (!qrData && window.location.hash.includes('data=')) {
+                try {
+                    const hashPart = window.location.hash.split('data=')[1].split('&')[0];
+                    qrData = JSON.parse(decodeURIComponent(atob(hashPart)));
+                } catch (err) {
+                    console.warn('No se pudo decodificar respaldo hash:', err);
                 }
             }
 
@@ -1012,7 +1095,7 @@
             if (!qrData) {
                 document.getElementById('scan-landing-title').textContent = 'Código QR no encontrado';
                 body.innerHTML = `
-                    <p class="text-sm text-slate-600 text-center mb-4">El identificador <strong>#${qrId}</strong> aún no ha sido sincronizado o no existe.</p>
+                    <p class="text-sm text-slate-600 text-center mb-4">El identificador <strong>#${qrId}</strong> aún no tiene un destino sincronizado en la nube.</p>
                     <button onclick="window.location.href = window.location.pathname" class="w-full py-3 rounded-xl font-bold text-sm text-white bg-slate-900">Ir al Panel de Administración</button>
                 `;
                 return;
@@ -1024,7 +1107,7 @@
             }
             document.getElementById('scan-landing-emoji').textContent = qrData.emoji || meta.emoji;
             document.getElementById('scan-landing-badge').textContent = `${meta.emoji} ${meta.label}`;
-            document.getElementById('scan-landing-title').textContent = qrData.extraTitle || qrData.name;
+            document.getElementById('scan-landing-title').textContent = qrData.extraTitle || qrData.name || 'Acceso Directo';
 
             if (qrData.category === 'asistencia') {
                 body.innerHTML = `
@@ -1038,16 +1121,17 @@
                     </form>
                 `;
             } else {
-                const target = qrData.targetUrl.startsWith('http') ? qrData.targetUrl : `https://${qrData.targetUrl}`;
+                const rawUrl = (qrData.targetUrl || '').trim();
+                const target = rawUrl.startsWith('http://') || rawUrl.startsWith('https://') ? rawUrl : `https://${rawUrl}`;
                 body.innerHTML = `
                     <img src="${meta.banner}" class="w-full h-36 object-cover rounded-2xl mb-4 border border-slate-200" alt="Vista previa">
-                    <p class="text-xs text-slate-500 text-center mb-4">Redirigiendo automáticamente en 2 segundos...</p>
+                    <p class="text-xs text-slate-500 text-center mb-4">Redirigiendo a <strong>${meta.label}</strong> en 1.5 segundos...</p>
                     <a href="${target}" class="block w-full py-3.5 rounded-xl font-bold text-sm text-white text-center shadow-lg" style="background-color: ${qrData.themePrimary || '#1e3a8a'};">
                         🚀 Abrir ${meta.label} Ahora
                     </a>
                 `;
                 // Redirección automática real en el navegador del celular
-                setTimeout(() => { window.location.href = target; }, 2000);
+                setTimeout(() => { window.location.replace(target); }, 1500);
             }
         }
 
