@@ -589,22 +589,8 @@
                 cleanBase += '/';
             }
             const separator = cleanBase.includes('?') ? '&' : '?';
-            const qr = dynamicQRs.find(item => item.id === id) || dynamicQRs[activeQRIndex];
 
-            // Si no hay Firebase conectado aún en GitHub Pages, incrustamos respaldo en el hash (#) para que el celular nunca dé error
-            if (!hasCloudConnection && qr) {
-                const payload = btoa(encodeURIComponent(JSON.stringify({
-                    category: qr.category,
-                    targetUrl: qr.targetUrl,
-                    extraTitle: qr.extraTitle,
-                    emoji: qr.emoji,
-                    courseCode: qr.courseCode,
-                    teacherName: qr.teacherName,
-                    themePrimary: currentTheme.primary
-                })));
-                return `${cleanBase}${separator}qr=${id}#data=${payload}`;
-            }
-
+            // Mantener el patrón del QR 100% fijo usando solo el ID permanente
             return `${cleanBase}${separator}qr=${id}`;
         }
 
