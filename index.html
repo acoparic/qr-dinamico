@@ -709,6 +709,28 @@
                         localStorage.setItem('qr_attendance_records', JSON.stringify(attendanceRecords));
                         renderAttendanceList();
                     });
+
+                    onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'dynamic_qrs'), (snap) => {
+                        const cloudQRs = [];
+                        snap.forEach(d => cloudQRs.push(d.data()));
+                        if (cloudQRs.length > 0) {
+                            cloudQRs.forEach(cq => {
+                                const idx = dynamicQRs.findIndex(item => item.id.toUpperCase() === String(cq.id).toUpperCase());
+                                if (idx !== -1) {
+                                    dynamicQRs[idx] = { ...dynamicQRs[idx], ...cq };
+                                } else {
+                                    dynamicQRs.push(cq);
+                                }
+                            });
+                            localStorage.setItem('qr_dynamic_list', JSON.stringify(dynamicQRs));
+                            if (!new URLSearchParams(window.location.search).get('qr')) {
+                                renderQRList();
+                                if (dynamicQRs[activeQRIndex]) {
+                                    updatePreviewPanel(dynamicQRs[activeQRIndex]);
+                                }
+                            }
+                        }
+                    });
                 } else {
                     const pill = document.getElementById('cloud-status-pill');
                     if (pill) {
@@ -1069,36 +1091,33 @@
             const view = document.getElementById('public-scanner-view');
             view.classList.remove('hidden');
 
-            let qrData = dynamicQRs.find(item => item.id.toUpperCase() === qrId.toUpperCase());
+            const cleanId = String(qrId || '').trim().toUpperCase();
+            let qrData = null;
 
-            // 1. Intentar leer la versión más reciente desde la nube (Firebase)
+            // 1. Prioridad: leer la versión más reciente desde la nube (Firebase)
             if (db && currentUser) {
                 try {
                     const { doc, getDoc } = window.FirebaseSDK;
-                    const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'dynamic_qrs', qrId.toUpperCase()));
+                    const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'dynamic_qrs', cleanId));
                     if (snap.exists()) {
                         qrData = snap.data();
                     }
                 } catch (e) {
-                    console.warn('Leyendo respaldo local/hash:', e);
+                    console.warn('Leyendo respaldo local:', e);
                 }
             }
 
-            // 2. Si no está en la nube, leer el respaldo incrustado en la URL (#data=...)
-            if (!qrData && window.location.hash.includes('data=')) {
-                try {
-                    const hashPart = window.location.hash.split('data=')[1].split('&')[0];
-                    qrData = JSON.parse(decodeURIComponent(atob(hashPart)));
-                } catch (err) {
-                    console.warn('No se pudo decodificar respaldo hash:', err);
-                }
+            // 2. Respaldo en localStorage del mismo navegador si existe coincidencia exacta por ID
+            if (!qrData) {
+                const storedList = JSON.parse(localStorage.getItem('qr_dynamic_list') || '[]');
+                qrData = storedList.find(item => String(item.id).toUpperCase() === cleanId) || null;
             }
 
             const body = document.getElementById('scan-landing-body');
             if (!qrData) {
-                document.getElementById('scan-landing-title').textContent = 'Código QR no encontrado';
+                document.getElementById('scan-landing-title').textContent = 'Código QR no sincronizado';
                 body.innerHTML = `
-                    <p class="text-sm text-slate-600 text-center mb-4">El identificador <strong>#${qrId}</strong> aún no tiene un destino sincronizado en la nube.</p>
+                    <p class="text-sm text-slate-600 text-center mb-4">El identificador <strong>#${cleanId}</strong> no se encontró en la nube. Conecta Firebase en el panel o escanea desde el mismo navegador donde lo configuraste.</p>
                     <button onclick="window.location.href = window.location.pathname" class="w-full py-3 rounded-xl font-bold text-sm text-white bg-slate-900">Ir al Panel de Administración</button>
                 `;
                 return;
