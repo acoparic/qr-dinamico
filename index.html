@@ -191,8 +191,8 @@
                     </div>
                     <div class="flex flex-col sm:flex-row gap-2">
                         <input type="url" id="github-base-url-input" oninput="updateBaseUrl(this.value)" placeholder="https://tu-usuario.github.io/mi-qr-dinamico/" class="flex-grow px-3.5 py-2 rounded-xl bg-white/10 border border-white/20 text-xs font-mono text-white placeholder-slate-400 outline-none focus:border-blue-400">
-                        <button onclick="autoDetectCurrentUrl()" class="px-3.5 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-xs font-semibold transition shrink-0">
-                            📍 Usar URL Actual
+                        <button type="button" onclick="autoDetectCurrentUrl()" class="px-3.5 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-xs font-semibold transition shrink-0" title="Úsalo solo cuando ya hayas abierto la página desde tu GitHub Pages">
+                            📍 Detectar desde GitHub
                         </button>
                     </div>
                     <!-- Configuración de Firebase para que GitHub Pages lea los cambios desde cualquier celular -->
@@ -490,25 +490,45 @@
                 fieldLabel: 'URL del Video o Perfil de TikTok',
                 placeholder: 'https://www.tiktok.com/@usuario/video/...',
                 desc: 'Conecta campañas cortas, reels o perfiles oficiales.',
-                banner: 'https://placehold.co/800x300/18181b/ffffff?text=Contenido+TikTok'
+                banner: 'https://placehold.co/800x300/18181b/ffffff?text=Video+en+TikTok'
             },
             instagram: {
                 label: 'Instagram',
                 emoji: '📸',
-                fieldLabel: 'Enlace de Post, Reel o Perfil Instagram',
-                placeholder: 'https://www.instagram.com/tuperfil/',
-                desc: 'Lleva a tus clientes a promociones, catálogo o perfil.',
-                banner: 'https://placehold.co/800x300/9d174d/ffffff?text=Perfil+Instagram'
+                fieldLabel: 'URL del Perfil o Publicación de Instagram',
+                placeholder: 'https://www.instagram.com/tuempresa/',
+                desc: 'Lleva tráfico a tu perfil, reels o tienda en Instagram.',
+                banner: 'https://placehold.co/800x300/be185d/ffffff?text=Perfil+Instagram'
             },
             asistencia: {
-                label: 'Asistencia Estudiantil',
+                label: 'Asistencia',
                 emoji: '🎓',
-                fieldLabel: 'Nombre de la Sesión o Asignatura',
-                placeholder: 'Ej. Clase 04 - Ingeniería de Software',
-                desc: 'Muestra un formulario rápido para que los alumnos registren su asistencia.',
-                banner: 'https://placehold.co/800x300/065f46/ffffff?text=Control+de+Asistencia'
+                fieldLabel: 'Nombre de la Clase / Sesión Académica',
+                placeholder: 'Ej. Programación Web - Sesión 05',
+                desc: 'Muestra un formulario para que los estudiantes registren su asistencia.',
+                banner: 'https://placehold.co/800x300/065f46/ffffff?text=Registro+de+Asistencia'
             }
         };
+
+        function updateBaseUrl(val) {
+            baseGitHubUrl = (val || '').trim();
+            localStorage.setItem('qr_github_base_url', baseGitHubUrl);
+            if (dynamicQRs[activeQRIndex]) {
+                updatePreviewPanel(dynamicQRs[activeQRIndex]);
+            }
+        }
+
+        function autoDetectCurrentUrl() {
+            if (window.location.hostname.includes('usercontent.goog') || window.location.protocol === 'about:') {
+                showToast('⚠️ Estás en la vista previa. Pega tu enlace de github.io directamente en la caja.', 'info');
+                return;
+            }
+            const detected = window.location.origin + window.location.pathname;
+            const input = document.getElementById('github-base-url-input');
+            if (input) input.value = detected;
+            updateBaseUrl(detected);
+            showToast('📍 URL de GitHub Pages detectada y guardada', 'success');
+        }
 
         const CUSTOM_BANNERS = {
             corp: 'https://placehold.co/800x300/1e293b/ffffff?text=Sede+Corporativa',
@@ -610,14 +630,6 @@
             }
         }
 
-        function autoDetectCurrentUrl() {
-            const detected = window.location.origin + window.location.pathname;
-            const input = document.getElementById('github-base-url-input');
-            if (input) input.value = detected;
-            updateBaseUrl(detected);
-            showToast('📍 URL base actualizada con la dirección actual', 'success');
-        }
-
         function updateCurrentQRField(field, value) {
             const qr = dynamicQRs[activeQRIndex];
             if (!qr) return;
@@ -628,37 +640,9 @@
             }
             localStorage.setItem('qr_dynamic_list', JSON.stringify(dynamicQRs));
             updatePreviewPanel(qr);
-        }
-
-        function setQREmoji(emoji) {
-            const qr = dynamicQRs[activeQRIndex];
-            if (!qr) return;
-            qr.emoji = emoji;
-            localStorage.setItem('qr_dynamic_list', JSON.stringify(dynamicQRs));
-            updatePreviewPanel(qr);
-            renderQRList();
-        }
-
-        function updateReferenceImage(val) {
-            const qr = dynamicQRs[activeQRIndex];
-            if (!qr) return;
-            qr.refImage = val;
-            localStorage.setItem('qr_dynamic_list', JSON.stringify(dynamicQRs));
-            updatePreviewPanel(qr);
-        }
-
-        async function syncQRToCloud(qr) {
-            localStorage.setItem('qr_dynamic_list', JSON.stringify(dynamicQRs));
-            if (!db || !currentUser || !window.FirebaseSDK) return;
-            try {
-                const { doc, setDoc } = window.FirebaseSDK;
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'dynamic_qrs', qr.id.toUpperCase()), {
-                    ...qr,
-                    themePrimary: currentTheme.primary,
-                    updatedAt: Date.now()
-                });
-            } catch (err) {
-                console.warn('Sincronización en nube pendiente:', err);
+            // Sincronización automática en tiempo real al editar URL o título
+            if (field === 'targetUrl' || field === 'extraTitle') {
+                syncQRToCloud(qr);
             }
         }
 
@@ -1177,6 +1161,9 @@
         // =========================================================================
         function downloadQRImage() {
             const qr = dynamicQRs[activeQRIndex];
+            // Asegurar que el canvas y la nube tengan el último enlace escrito antes de descargar
+            syncQRToCloud(qr);
+            generateQRCodeCanvas();
             const sourceCanvas = document.getElementById('qr-canvas');
             
             // Crear un canvas compuesto que incluya el marco blanco y el emoji central
